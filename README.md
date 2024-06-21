@@ -1,7 +1,7 @@
 # Discharge-variability-river-mobility
 Code for the paper "Accelerated river mobility linked to water discharge variability", submitted by Leenman et al., 2024. Will update this page with DOI when I have one. If you use this code, please cite the paper.
 
-Data produced by script 1 and used in scripts 2 and 3 can be downloaded from Zenodo, DOI: 10.5281/zenodo.12193792.
+Data produced by script 1 and used in scripts 2 and 3 can be downloaded from Zenodo: https://doi.org/10.5281/zenodo.12193792.
 
 This repository contains 3 files:
 
