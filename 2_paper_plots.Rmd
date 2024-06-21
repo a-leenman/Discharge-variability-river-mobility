@@ -1,0 +1,590 @@
+---
+title: "2_Paper_plots"
+author: "Anya Leenman"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    self_contained: false
+---
+Code to generate the plots in ... submitted to ...
+
+```{r setup, include=T}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(raster)
+library(lubridate)
+library(sf)
+library(dplyr)
+
+
+rm(list = ls())
+
+
+# Where are the supplementary data for this paper saved? 
+# Available from Zenodo. DOI: 10.5281/zenodo.12193792
+general_dir <- './data/SM_data/' 
+
+# Where are water masks from Greenberg et al. 2024? This folder should contain the "SingleRivers" water masks, 
+# available from: https://datadryad.org/stash/dataset/doi:10.5061/dryad.wm37pvmvf
+water_mask_directory <- './data/mobility/mask/area/' 
+
+# Where are the relevant hydrological data saved? 
+# E.g. you could use the "tidyhydat" or "RivRetrieve" packages to download data.
+# Daily hydrological data used in this study were saved as csv files with columns for date-stamps and discharge respectively. 
+# Each filename corresponded to the flow-gauge id given in the 'ohdb_id' column of our supplementary data file, "ds02_Qvar_and_TR.csv". 
+
+# Note that parts of the code for Figure 1 will not work unless you download the daily time-series data from the relevant agencies given in the manuscript.
+hydro_timeseries_dir <- './data/hydrology/time_series/OHDB_Q/'
+
+
+
+```
+
+# Imports
+
+Import data on mobility, channel character (planform, slope etc), sed flux, bulk discharge metrics, discharge variability.
+
+Data on mobility and sediment flux from Greenberg and Ganti 2024, EPSL:
+Data on bulk discharge metrics and discharge variability computed from previous script.
+
+```{r imports}
+
+df_joined <- read.csv(paste0(general_dir, '/ds02_Qvar_and_TR.csv'))
+
+```
+
+# Figure 1: 
+
+Conceptual plot comparing raw flow data, flow duration curve + channel masks for a pair of rivers with similar mean discharge but different variability.
+
+```{r concept_fig_data, eval = T}
+
+# data prep ---- import data needed ------
+# Koppen-geiger climate zones:
+kgclim <- kgc::climatezones %>%
+  mutate(KG = as.factor(substr(Cls, 1, 1))) %>%
+  dplyr::select(-Cls) %>%
+  dplyr::rename(x = Lon, y = Lat, z = KG) %>%
+  relocate(x, .before = y) 
+
+# Convert factor to integer codes
+kgclim$z <- as.integer(kgclim$z)
+
+# Create raster from dataframe
+kg_rast <- rasterFromXYZ(kgclim)
+
+# Set raster to categorical 
+kg_rast <- ratify(kg_rast)
+
+# Assign WGS CRS to raster
+crs(kg_rast) <- CRS("+proj=longlat +datum=WGS84 +no_defs")
+
+# Define Winkel II proj string
+winkel_proj <- st_crs('ESRI:54019')$proj4string
+
+# Reproject to Winkel II 
+kg_rast_winkel <- projectRaster(kg_rast, crs = winkel_proj, method = "ngb")
+
+# convert to SpatRaster
+kg_rast_winkel <- terra::rast(kg_rast_winkel)
+
+
+#-----
+# reach locations as sf:
+dfj_sf <- df_joined %>% 
+  st_as_sf(coords = c(x = 'ohdb_longitude', y = 'ohdb_latitude'), crs = 4326) %>% 
+  select(River, ohdb_id, notes, RBI)
+
+dfj_sf_wink <- dfj_sf %>% 
+  st_transform(crs = st_crs('ESRI:54019'))
+
+# flow data for all sites - to generate panel with normalised FDCs 
+flowdat_long <- lapply(1:nrow(df_joined), FUN = function(i){
+  read.csv(paste0(hydro_timeseries_dir, df_joined$ohdb_id[i], '.csv')) %>% 
+    mutate(ohdb_id = df_joined$ohdb_id[i]) %>% # unique ID for rows corresponding to each station
+    mutate(Q_norm = Q / max(Q, na.rm = T)) %>% # normalised Q
+    select(-Q, -date) %>% 
+    arrange(desc(Q_norm)) %>% 
+    filter(complete.cases(.)) %>% 
+    mutate(rn = row_number()) %>% 
+    mutate(perc_eq_ex = rn/max(rn) * 100) %>% # work out %time > Q_norm
+    select(-rn)
+}) %>% bind_rows() 
+
+# ---sites of interest----
+soi <- c(
+  'Mortes_SantoAntonioDoLeverger', # low rbi, mean Q = 878.206986
+  'Tisza_Vylok') # high rbi, mean Q = 189.744506
+soi_codes <- c('MS', 'TV')
+soi_names_pretty <- c('Mortes at Santo Antonio dô Leverger',   'Tisza at Vylok')
+
+#----- flow records ------
+soi_ohdb <- df_joined$ohdb_id[df_joined$River %in% soi] 
+soi_flowdat <- lapply(1:length(soi), FUN = function(i){
+  read.csv(paste0(hydro_timeseries_dir, soi_ohdb[i], '.csv')) %>% 
+    mutate(ohdb_id = soi_ohdb[i]) %>% 
+    mutate(date = ymd(date)) 
+}) %>% bind_rows()
+
+#------ water masks ------
+require(terra)
+masks <- lapply(1:length(soi), FUN = function(i){
+  rastdir <- paste0(water_mask_directory, '/SingleRivers/RiverData/', 
+                    df_joined$Type[df_joined$River == soi[i]], '/', soi[i])
+  tifs <- list.files(rastdir, recursive = T, full.names = T, pattern = '.tif')
+  tifs_aux <- list.files(rastdir, pattern = '.tif.aux', full.names = T, recursive = T)
+  tifs <- base::setdiff(tifs, tifs_aux) # get rid of aux files from list of files to import
+  st <- rast(tifs)
+  
+  # get timestamp from filename
+  tvec_yr <- as.numeric(stringr::str_sub(tifs, -25, -22) )
+  
+  # error trap for date-stamp naming inconsistency in channel masks
+  if(soi[i] == 'Tanana_NearHardingLake'){ 
+    tvec_yr <- as.numeric(stringr::str_sub(tifs, -24, -21) )
+  }
+  
+  # assign timestamps to raster stack time()
+  time(st) <- tvec_yr 
+  
+  # zoom in if necessary so fig panels have similar scale
+  if(soi[i] == 'Mortes_SantoAntonioDoLeverger'){
+    st <- crop(st, y = ext(c(497850,  510000, 8631000, 8646000)))
+  }
+  
+  return(st)
+})
+```
+
+```{r colour_setup, eval = T}
+
+# cols for plotting flow records: 
+soi_cols <- c('#4575b4', '#d73027')
+
+# cols for plotting rasters:
+colvec <- scales::alpha(c('#a1dab4',
+                          '#41b6c4', 
+                          '#2c7fb8', 
+                          '#253494'), 0.8)
+
+# cols for plotting Koppen-Geiger climate zones:
+kgcols <- c('#33a02c', # tropical
+            '#fdc086', # dry
+            '#b2df8a', # temperate
+            '#ffff99', # continental
+            '#beaed4') # polar
+
+```
+
+```{r conceptual_fig_base, fig.width = 7, fig.height = 8, dpi=300, eval = T}
+par(oma = c(0, 0, 0 , 0),
+    mai = c(0.5, 0.5, 0, 0),
+    mgp = c(1.5, 0.5, 0))
+
+layout(mat = matrix(1:(length(soi)*3), 
+                    nrow = 3, 
+                    ncol = length(soi)))  
+
+for(i in 1:length(soi)){
+  
+  # row 1-------------------------
+  
+  if(i == 1){ 
+    
+    # site map - winkel II
+    plot(kg_rast_winkel, 
+         pax = list(side = NA),
+         col = kgcols,
+         mar = rep(0, 4),
+         legend = F,
+         xlim = c(-12000000, 15000000),
+         ylim = c(-7000000, 9500000),
+         box = F)
+    
+    # annotations
+    par(xpd = NA)
+    add_legend(x = -12000000, y = -5800000, 
+               legend = c(LETTERS[1:5], soi_codes), 
+               border = NA,
+               fill = c(kgcols, NA, NA), 
+               pch = c(rep(NA, 5), rep(25, 2)),
+               col = NA,
+               pt.bg = c(rep(NA, 5), soi_cols),
+               horiz = T, 
+               cex = 1.2,
+               bty = 'n',
+               x.intersp = 0.3)
+    add_legend(x = -12000000, y = -100000,
+               title = 'RBI',
+               legend = signif(range(dfj_sf_wink %>% pull('RBI')), 2),
+               pt.cex = range(dfj_sf_wink %>% pull('RBI')) * 7 + 1,
+               pch = 19,
+               col = scales::alpha('black', 0.5),
+               bty = 'n')
+    add_legend(x = -12250000, y = 12300000,
+               legend = '(a)',
+               text.font = 2,
+               cex = 1.2,
+               bty = 'n')
+    par(xpd = F)
+    
+    # river gauge locations
+    points(dfj_sf_wink %>% filter(!ohdb_id %in% soi_ohdb),
+           cex = dfj_sf_wink %>% filter(!ohdb_id %in% soi_ohdb) %>% pull('RBI') * 7 + 1,
+           pch = 19,
+           col = scales::alpha('black', 0.5))
+    
+    points(dfj_sf_wink %>% filter(ohdb_id %in% soi_ohdb),
+           cex = dfj_sf_wink %>% filter(ohdb_id %in% soi_ohdb) %>% pull('RBI') * 7 + 1,
+           bg = soi_cols,
+           pch = 25,
+           col = 'white')
+    
+    
+  } else if (i == 2){ # FDCs of all - normalised
+    
+    # blank axes
+    plot(c(0, 100), range(flowdat_long$Q_norm), type = 'n',
+         ylab = bquote('Normalized discharge,' ~italic('Q / Q max')),
+         xlab = '% Time equalled or exceeded',
+         log = 'y',
+         ylim = c(0.003, 1.1))
+    
+    # fdc lines
+    for(j in 1:nrow(df_joined)){
+      fd <- flowdat_long %>% filter(ohdb_id == df_joined$ohdb_id[j])
+      lines(fd$perc_eq_ex,
+            fd$Q_norm,
+            col = scales::alpha('darkgray', 0.5))
+    }
+    
+    # highlights sites of interest:
+    leg_pos <- c('topright', 'bottomleft')
+    for(j in 1:length(soi)){
+      fd <- flowdat_long %>% filter(ohdb_id == soi_ohdb[j])
+      lines(fd$perc_eq_ex,
+            fd$Q_norm,
+            lwd = 2,
+            col = soi_cols[j])
+      # annotations:
+      legend(leg_pos[j], soi_names_pretty[j], bty = 'n', text.col = soi_cols[j])
+    }
+    
+    # subfig label
+    par(xpd = NA)
+    legend(x = -22, y = 1.7,
+           legend = '(b)',
+           text.font = 2,
+           cex = 1.2,
+           bty = 'n')
+    par(xpd = T)
+  }
+  
+  # row 2: ----plot raw flow - note time crop to 'zoom' on same period----
+  
+  Q <- soi_flowdat %>% 
+    filter(ohdb_id == soi_ohdb[i]) %>% 
+    filter(date >= ymd('1990-01-01') & date <= ymd('2010-12-31')) 
+  
+  plot(Q$date, Q$Q,
+       xlab = 'Date', 
+       ylab = bquote('Discharge,' ~ italic(Q) ~ ' (m'^3*s^-1*')'), 
+       type = 'l',
+       cex.lab = 1.2,
+       ylim = range(soi_flowdat$Q, na.rm = T))
+  
+  # annotation
+  legend('topright', soi_names_pretty[i], text.col = soi_cols[i], bty = 'n')
+  
+  # subfig label
+  par(xpd = NA)
+  legend(x = ymd('1985-06-01'), y = 4000,
+         legend = paste0('(', letters[i+2], ')'),
+         text.font = 2,
+         cex = 1.2,
+         bty = 'n')
+  par(xpd = T)
+  
+  
+  # row 3---plot mobility masks----
+  
+  # annotations (technically attached to row above!):
+  par(xpd = NA)
+  legend(
+    'bottomleft',
+    legend = c(
+      bquote(RBI == ~ .(signif(df_joined$RBI[df_joined$ohdb_id == soi_ohdb[i]], 2))),
+      bquote(DVI[a] == ~ .(signif(df_joined$DVIa[df_joined$ohdb_id == soi_ohdb[i]], 2))),
+      bquote(DVI[c] == ~ .(signif(df_joined$DVIc[df_joined$ohdb_id == soi_ohdb[i]], 2))),
+      bquote(bar(Q) == ~ .(signif(df_joined$mean_Qd[df_joined$ohdb_id == soi_ohdb[i]], 2)) ~ m^3 * s^-1),
+      bquote(bar(B) == ~ .(signif(df_joined$Width..m.[df_joined$ohdb_id == soi_ohdb[i]], 2)) ~ m),
+      bquote('T'[R] == ~ .(signif(df_joined$TR[df_joined$ohdb_id == soi_ohdb[i]], 2)) ~ yr)),
+    inset = c(-0.1, -0.7),
+    bty = 'n',
+    cex = 1.2,
+    y.intersp = 1.2
+  )
+  legend(x = ymd('1985-06-01'), y = -800,
+         legend = paste0('(', letters[i+4], ')'),
+         text.font = 2,
+         cex = 1.2,
+         bty = 'n')
+  par(xpd = F)
+  
+  # vector of years to plot
+  yrs <- c(1990, 2000, 2010, 2020) 
+  
+  # start index - correction to make sure end of colour scale used in plot
+  si <- length(colvec) + 1 - length(yrs)
+  
+  # plot 1 + add next decades
+  plot(masks[[i]][[time(masks[[i]]) == yrs [1]]],
+       col = c(NA, colvec[si]),
+       legend = F,
+       axes = F,
+       mar = rep(0, 4),
+       buffer = F,
+       clip = T) # first raster
+  pu <- par('usr') # save axis lims to object
+  sbar(2000, xy="right", divs=2, cex=1, ticks=TRUE, label = ('2 km')) # add scalebar
+  
+  
+  for(j in 2:length(yrs)){ # superimpose next layers - cleaner way?
+    plot(masks[[i]][[time(masks[[i]]) == yrs [j]]], 
+         col = c(NA, colvec[si-1 + j]),
+         axes = F,
+         legend = F,
+         mar = rep(0, 4),
+         buffer = F,
+         clip = T,
+         add = T) # additional raster
+  }
+}
+
+par(xpd = NA)
+xadj <- -0.35
+yadj <- 0.15 # tweak as necessary
+add_legend(
+  x = pu[1] + xadj * (pu[2] - pu[1]), 
+  y = pu[3] + yadj * (pu[4] - pu[3]),
+  legend = yrs,
+  fill = colvec[si:length(colvec)],
+  border = NA,
+  horiz = T, 
+  bty = 'n',
+  cex = 1.2)
+par(xpd = F)
+```
+
+
+# Figure 2: 
+
+Channel mobility T_{R} vs bulk metrics of flow and topography. 
+
+Prep cols:
+
+```{r f2cols}
+require(scales)
+pcols <- RColorBrewer::brewer.pal(3, 'Set1')[2:3]
+
+```
+
+Make plot:
+
+```{r bulkmetrics_v_TR, fig.height=6, fig.width=6, dpi=300, eval = T}
+# plotting params
+lposy <- c(161, 148, 135)
+xadj <- -0.2
+
+par(mfrow = c(2,2), mai = c(0.5, 0.5, 0.7, 0), mgp=c(1.8,0.5,0))
+
+# variables to include
+bulkvars <- c('mean_Qd', 'CV', 'slope..m.m', 'Bed_Qs_norm')
+xlabs <- c(bquote(italic(bar(Q)) ~ '('~m^3 * s^-1~')'),
+           bquote('Coefficient of variation (CV) of' ~ italic(Q)),
+           bquote('Channel slope,' ~ italic(S) ~ ' (-)'),
+           bquote('Sediment concentration,' ~ italic(Q[s]^'*') ~ ' (-)')
+           )
+
+# subdivide by n channelthreads
+div_var <- 'Channel.Count.Index....'
+div_thresh <- 1
+group_labels <- c('All', 'Single-thread', 'Multi-thread')
+
+# subset data
+sub1 <- df_joined %>% filter(!!as.symbol(div_var) <= !!div_thresh)
+sub2 <- df_joined %>% filter(!!as.symbol(div_var) > !!div_thresh) 
+subs <- list(sub1, sub2)
+
+# plot
+for(i in 1:length(bulkvars)){
+  bvar <- colnames(subset(df_joined, select = bulkvars))[i]
+  
+  # set plot axes
+  plot(range(df_joined[bvar], na.rm = T), range(df_joined$TR),
+       xlab = xlabs[i], 
+       ylab = bquote('Reworking timescale,' ~ italic('T'[R]) ~ ' (yr)'), 
+       type = 'n', 
+       log = '')  # if log-transform needed
+  pu <- par('usr') # save axis lims to object
+  
+  # fit exponential model to full dataset:
+  x = df_joined[bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+  y = df_joined$TR
+  
+  mod <- lm(log10(y) ~ log10(x))
+  r2a <- summary(mod)$adj.r.squared
+  pv <- signif(summary(mod)$coefficients[2,4], 1)
+  
+  # plot model + conflims
+  newx <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+  mod.preds <- 10^(predict(mod, interval = 'confidence', new = list(x = newx), level = 0.95))
+  polygon(c(newx, rev(newx)), # add conflims to plot
+          c(mod.preds[, 2], rev(mod.preds[, 3])),
+          col = 'gray90',
+          border = NA)
+  lines(newx, mod.preds[,1], col = 'black') # add model to plot
+  
+  # annotations
+  par(xpd = NA)
+  legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+         y = lposy[1],
+         legend = bquote(.(group_labels[1]) ~
+                           italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                           italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),         
+         bg = NA,
+         bty = 'n')
+  legend('topright', legend = paste0('(', letters[i], ')'), text.font = 2, bty = 'n')
+  par(xpd = F)
+  
+  for(j in 1:length(subs)){
+    
+    x <- subs[[j]][bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+    y <- subs[[j]]$TR
+    
+    # fit exponential model:
+    mod <- lm(log10(y) ~ log10(x))
+    r2a <- summary(mod)$adj.r.squared
+    pv <- signif(summary(mod)$coefficients[2,4], 1)
+    
+    # plot points
+    points(x, y, col = alpha(pcols[j], 0.7), pch = 16)
+    
+    # plot model - subsets
+    newx = seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+    mod.preds <- 10^(predict(mod,list(x = newx)))
+    lines(newx, mod.preds, col = pcols[j])
+    
+    # annotations
+    par(xpd = NA)
+    legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+           y = lposy[j+1],
+           col = pcols[j],
+           legend = bquote(.(group_labels[j+1]) ~
+                             italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                             italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),
+           bg = NA,
+           text.col = pcols[j],
+           bty = 'n')
+    par(xpd = F)
+  }
+}
+
+```
+
+# Figure 3: 
+
+Channel mobility T_{R} vs discharge variability. 
+
+```{r Qvar_v_TR, fig.height=2.5, fig.width=6, dpi=300, eval = T}
+# plotting params
+par(mfrow = c(1,3), oma = c(0, 0, 0, 0.7), mai = c(0.4, 0.4, 0.6, 0.07), mgp=c(1.8,0.5,0))
+
+# variables to include
+Qvars <- c('RBI', 'DVIa', 'DVIc')
+xlabs <- c(bquote('Richards-Baker Index,' ~ italic(RBI) ~ '(-)'),
+           bquote('Annual discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
+           bquote('Cumulative discharge var.,' ~ italic(DVI[c]) ~ '(-)'))
+
+# plot
+for(i in 1:length(Qvars)){
+  bvar <- colnames(subset(df_joined, select = Qvars))[i]
+  
+  # set plot axes
+  par(xpd = NA)
+  plot(range(df_joined[bvar], na.rm = T), range(df_joined$TR),
+       xlab = xlabs[i], 
+       ylab = bquote('Reworking timescale,' ~ italic('T'[R]) ~ ' (yr)'), 
+       type = 'n', 
+       log = '')  # if log-transform needed
+  par(xpd = F)
+  pu <- par('usr') # save axis lims to object
+  
+  # fit exponential model to full dataset:
+  x = df_joined[bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+  y = df_joined$TR
+  
+  mod.exp <- lm(log10(y) ~ log10(x))
+  r2a <- summary(mod.exp)$adj.r.squared
+  pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+  
+  # plot model + conflims
+  newx <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+  mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
+  polygon(c(newx, rev(newx)), # add conflims to plot
+          c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
+          col = 'gray90',
+          border = NA)
+  lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
+  
+  # annotations
+  par(xpd = NA)
+  legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+         y = lposy[1],
+         legend = bquote(.(group_labels[1]) ~
+                           italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                           italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),      
+         bg = NA,
+         bty = 'n')
+  legend('topright', legend = paste0('(', letters[i], ')'), text.font = 2, bty = 'n')
+  par(xpd = F)
+  
+  for(j in 1:length(subs)){
+    
+    x <- subs[[j]][bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+    y <- subs[[j]]$TR
+    
+    # fit exponential model:
+    mod.exp <- lm(log10(y) ~ log10(x))
+    r2a <- summary(mod.exp)$adj.r.squared
+    pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+    
+    # plot points
+    points(x, y, col = alpha(pcols[j], 0.7), pch = 16)
+    
+    # plot model - subsets
+    newx = seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+    mod.exp.preds <- 10^(predict(mod.exp,list(x = newx)))
+    lines(newx, mod.exp.preds, col = pcols[j])
+    
+    # annotations
+    par(xpd = NA)
+    
+    legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+           y = lposy[j+1],
+           col = pcols[j],
+           legend = bquote(.(group_labels[j+1]) ~
+                             italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                             italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),
+           bg = NA,
+           text.col = pcols[j],
+           bty = 'n')
+    par(xpd = F)
+  }
+}
+```
+
+

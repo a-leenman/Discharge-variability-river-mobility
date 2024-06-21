@@ -1,0 +1,248 @@
+---
+title: "1_compute_flow_signatures"
+author: "Anya Leenman"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    self_contained: true
+---
+
+Code for the paper "Accelerated river mobility linked to water discharge variability" by Leenman et al., submitted June 2024.
+
+This code is to quality-check flow gauge records and compute flow signatures describing discharge variability as well as  bulk flow metrics e.g. mean/median discharge.
+
+We do not have permission to publish the raw time-series data we assembled for this paper from various government agencies, although links to all these agencies are given in the manuscript and supporting material of our paper.
+
+To make a reproducible example of how we computed flow signatures, here we use time-series data accessible in R with the "tidyhydat" package.
+
+## Housekeeping:
+
+```{r setup, include=T}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list = ls())
+library(dplyr)
+library(lubridate)
+library(tidyhydat)
+# download_hydat() # only need to run once
+
+# parameters to set:
+#--------
+start_year <- 1900 # what year should time series begin (if we need to truncate)
+completeness_thresh <- 0.7 # how complete should data be to be processed?
+min_len <- 5 # what is minimum record length, in years?
+cutoff_month <- 7 #cutoff for "middle" of year - each landsat mosaic from Greenberg et al. 2024 is Jan-Dec, so assign them "1 July" as their date.
+
+outdir <- paste0('./data/SM_data/') # where should outputs be saved?
+
+
+```
+
+## Data imports
+
+Import
+
+- flow gauges to be used
+- time series for each gauge
+
+```{r imports}
+
+# gauges to be used
+Q_locations <- c('08HA010', '08LG010', '08LG065',  '05BH004') # a few gauges w/ diff. Q variability.
+
+# time series import
+Q_series <- lapply(1:length(Q_locations), FUN = function(i){
+  
+  f <- hy_daily_flows(station_number = Q_locations[i]) %>%   # read in data from tidyhydat
+    select(Date, Value) %>% # select columns of interest
+    rename_with(~ Q_locations[i], starts_with('Val')) %>% # rename so discharge column named after site 
+    rename(date = Date) %>% 
+      mutate(date = ymd(date)) # convert to date format using lubridate (if needed - tidyhydat dates already imported as 'Date' format)
+
+  
+  # check record length and completeness (quality)
+  #--------------
+  # first, check days with no data HAVE been assigned a row:
+  f <- f %>%
+    mutate(timegaps = date - lag(date) == 1) # extra column to identify gaps; will give 'FALSE' if difference between two dates != 1, i.e. there is a gap.
+  
+  #---- check for missing data -----
+  if(FALSE %in% f$timegaps){
+    print(paste0('Timegap in station ', Q_locations[i]))
+    new_times <- data.frame(date = seq.Date(min(f$date, na.rm = T), max(f$date, na.rm = T), by="day"))
+    f <- full_join(new_times, f, by = 'date')
+  }
+  
+  # remove timegaps column now
+  f <- f %>% 
+    select(-timegaps)
+  
+  f_len <- max(year(f$date), na.rm = T) - min(year(f$date), na.rm = T)
+  f_qual <- 1 - sum(is.na(f[2]))/nrow(f)
+  
+  # set data to NA if needed
+  if(f_len < min_len | f_qual < completeness_thresh){
+    print(paste0('Qual check failed for station ', Q_locations[i]))
+    f[2] <- as.numeric(NA)
+  } 
+  
+  return(f)
+  
+}) %>% 
+  purrr::reduce(full_join, by = "date") # join all imported files by 'date', so we end with a dataframe w' a column for date and a discharge column for each site.
+
+Q_series <- Q_series %>% 
+  select(!where(~all(is.na(.)))) %>% # remove columns w/ only NA (i.e. didn't pass quality check above)
+  arrange(date) %>% 
+  filter(date >= ymd(paste0(start_year, '-01-01'))) %>%  # date cutoff, if needed.
+  mutate(img_yr = ifelse(month(date) < cutoff_month, # assign "2015-2016" to all dates from 2015-07-01 to 2016-06-30, inclusive.
+                         paste0(year(date) - 1, '-', year(date)), 
+                         paste0(year(date), '-', year(date) + 1))) %>% 
+  relocate(img_yr, .after = date) 
+
+
+```
+
+## Qual-check
+
+Plot each time series to manually inspect for evidence of major non-stationarity e.g. dam closure.
+
+```{r manual_qualcheck}
+
+for(i in 3:length(Q_series)){
+  plot(Q_series$date, Q_series[i] %>% pull(), type = 'l',
+       xlim = )
+}
+```
+
+
+## Compute flow signatures
+
+CV = Coefficient of variation.
+
+RBI = Richards-Baker Index: https://doi.org/10.1111/j.1752-1688.2004.tb01046.x 
+
+DVIa = annual discharge variability index: https://doi.org/10.1016/j.earscirev.2019.102977
+
+DVIc = cumulative discharge variability index: modified from https://doi.org/10.1016/j.earscirev.2019.102977
+
+Note modified DVIc: instead of using wettest/driest *month* in whole record, we used the 95th and 5th percentile of the *daily* discharge record to compute this metric.
+
+
+```{r flowsigs}
+
+# --- Function to compute coefficient of variation (CV) of discharge -----
+compute_CV <- function(fl){
+  CV <- sd(fl, na.rm = T) / mean(fl, na.rm= T)
+  return(CV)
+}
+
+# compute CV
+CV <- Q_series %>% 
+  summarise_if(is.numeric, ~compute_CV(.)) %>%  
+  `rownames<-` ('CV')
+
+#---- RBI --------
+# function to compute RBI:
+compute_RBI <- function(fl){
+  fl_offset <- abs(fl - lag(fl))
+  rbi <- sum(fl_offset, na.rm = T) / sum(fl, na.rm = T)
+  return(rbi)
+  }
+
+# group by year
+Q_series_annual <- Q_series %>% 
+  group_by(img_yr)
+
+# compute RBI
+RBI <- Q_series_annual %>% 
+  summarise_if(is.numeric, ~compute_RBI(.)) %>% # compute annual RBI
+  ungroup %>% 
+  summarise_if(is.numeric, ~mean(., na.rm = T)) %>%   # mean RBI across all years
+  `rownames<-` ('RBI')
+
+# --- DVIa  -----
+Q_av <- Q_series %>% 
+  summarise_if(is.numeric, ~mean(., na.rm = T))    # mean Q across all days
+
+Q_monthly <- Q_series %>% # compute average monthly Q
+  mutate(mth = as.character(month(date))) %>%   
+  group_by(mth) %>%
+  summarise_if(is.numeric, ~ifelse(sum(!is.na(.)) / 30 > completeness_thresh, mean(., na.rm = T), NA)) # only compute if month is sufficiently long
+
+Q_monthly_min <- Q_monthly %>%  # driest month on average across all years
+  ungroup %>% 
+  summarise_if(is.numeric, ~min(., na.rm = T))  
+
+Q_monthly_max <- Q_monthly %>% # wettest month on average across all years
+  ungroup %>% 
+  summarise_if(is.numeric, ~max(., na.rm = T))
+
+DVIa <- ((Q_monthly_max - Q_monthly_min) / Q_av) %>% # work out DVIa
+  `rownames<-` ('DVIa')
+
+
+# ------DVIc-------
+
+# function to compute DVIc:
+compute_DVIc <- function(fl){
+  qu <- quantile(fl, probs = c(0.05, 0.95), names = F, na.rm = T) # get 5th/95th quantiles of daily Q
+  DVIc <- (qu[2] - qu[1]) / mean(fl, na.rm = T) # compute DVIc
+  return(DVIc)
+}
+
+# compute DVIc
+DVIc <- Q_series %>% 
+  summarise_if(is.numeric, ~compute_DVIc(.)) %>%  # compute DVIc across whole record
+  `rownames<-` ('DVIc')
+
+
+```
+
+## Compute central tendencies of discharge:
+
+mean_Qd = mean daily discharge
+
+mean_Qm = mean monthly discharge (months with insufficient data ignored)
+
+mean_Qa = mean annual discharge (years with insufficient data ignored)
+
+```{r Q_means}
+mean_Qd <- Q_av %>% 
+  `rownames<-` ('mean_Qd')
+
+mean_Qm <- Q_monthly %>% 
+  summarise_if(is.numeric, ~mean(., na.rm = T)) %>% # mean Q across all months with sufficient data
+  `rownames<-` ('mean_Qm')
+
+mean_Qa <- Q_series_annual %>% 
+  summarise_if(is.numeric, ~ifelse(sum(!is.na(.)) / 365 > completeness_thresh, mean(., na.rm = T), NA)) %>%  # only compute if data is sufficiently long
+  summarise_if(is.numeric, ~mean(., na.rm = T)) %>%  # mean Q across all years with sufficient data
+  `rownames<-` ('mean_Qa')
+
+```
+
+## Write flow signatures and bulk metrics (central tendencies) to file:
+
+A little reshaping first:
+
+```{r write_outputs}
+flow_sigs <- bind_rows(CV, RBI, DVIa, DVIc) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  mutate(ohdb_id = row.names(.)) %>% 
+  relocate(ohdb_id, .before = CV) 
+
+Q_means <- bind_rows(mean_Qd, mean_Qm, mean_Qa) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  mutate(ohdb_id = row.names(.)) %>% 
+  relocate(ohdb_id, .before = mean_Qd) 
+
+write.csv(flow_sigs, paste0(outdir, '/demo_flow_signatures.csv'), row.names = F)
+write.csv(Q_means, paste0(outdir, '/demo_Q_means.csv'), row.names = F)
+```
+
