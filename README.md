@@ -6,7 +6,7 @@ Data produced by script 1 and used in scripts 2 and 3 can be downloaded from Zen
 This repository contains 3 files:
 
 
-**1_Compute_flow_signatures: **Code to compute flow signatures (metrics for discharge variability) from daily discharge records. 
+**1_Compute_flow_signatures:** Code to compute flow signatures (metrics for discharge variability) from daily discharge records. 
 
 **2_Paper_plots:** Code to generate figures in the main manuscript. 
 
