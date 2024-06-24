@@ -165,7 +165,7 @@ for(i in 1:length(bulkvars)){
   mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
   polygon(c(newx, rev(newx)), # add conflims to plot
           c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
-          col = 'gray80',
+          col = 'gray85',
           border = NA)
   lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
   
@@ -259,7 +259,7 @@ for(i in 1:length(yvars)){
   mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
   polygon(c(newx, rev(newx)), # add conflims to plot
           c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
-          col = 'gray80',
+          col = 'gray85',
           border = NA)
   lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
   
