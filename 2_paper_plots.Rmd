@@ -119,7 +119,7 @@ soi <- c(
   'Mortes_SantoAntonioDoLeverger', # low rbi, mean Q = 878.206986
   'Tisza_Vylok') # high rbi, mean Q = 189.744506
 soi_codes <- c('MS', 'TV')
-soi_names_pretty <- c('Mortes at Santo Antonio dô Leverger',   'Tisza at Vylok')
+soi_names_pretty <- c('Mortes at Santo Antoniô do Leverger',   'Tisza at Vylok')
 
 #----- flow records ------
 soi_ohdb <- df_joined$ohdb_id[df_joined$River %in% soi] 
