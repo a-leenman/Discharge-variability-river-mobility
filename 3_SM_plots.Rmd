@@ -13,7 +13,7 @@ output:
 Code to generate SM plots.
 
 ```{r setup, include=T}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = F)
 
 library(raster)
 library(dplyr)
@@ -32,7 +32,7 @@ general_dir <- './data/SM_data/'
 
 # Where are water masks from Greenberg et al. 2024? This folder should contain the "SingleRivers" water masks, 
 # available from: https://datadryad.org/stash/dataset/doi:10.5061/dryad.wm37pvmvf
-water_mask_directory <- './data/mobility/mask/area/' 
+water_mask_directory <- './data/masks/' 
 
 # Where are the relevant hydrological data saved? 
 # E.g. use the "tidyhydat" or "RivRetrieve" packages to download data.
@@ -47,7 +47,7 @@ hydro_timeseries_dir <- './data/hydrology/time_series/OHDB_Q/'
 Import data on mobility, channel character (planform, slope etc), sed flux, bulk discharge metrics, discharge variability.
 
 Data on mobility and sediment flux from Greenberg and Ganti 2024, EPSL.
-Data on bulk discharge metrics and discharge variability computed from previous script.
+Data on bulk discharge metrics and discharge variability computed from previous scripts.
 
 ```{r imports}
 
@@ -68,13 +68,14 @@ pcols <- RColorBrewer::brewer.pal(3, 'Set1')[2:3]
 
 Make plot:
 
-```{r planform_TR_hist, eval = T}
+```{r planform_TR_hist, eval = F}
 dfj_planform <- df_joined %>% 
-  mutate(nchan = ifelse(Channel.Count.Index.... == 1, 'Single-thread', 'Multi-thread'))
+  # mutate(nchan = ifelse(Channel.Count.Index.... == 1, 'Single-thread', 'Multi-thread'))
+  mutate(nchan = ifelse(Type == 'Me', 'Single-thread', 'Multi-thread'))
 
 ggplot(dfj_planform, aes(x = TR, fill = nchan)) + 
-  geom_histogram(colour = 'lightgrey', alpha = 0.7) + 
-  scale_fill_manual(values = rev(pcols)) +
+  geom_histogram(colour = 'lightgrey', alpha = 0.6, position = 'identity') + 
+  scale_fill_manual(values = pcols) +
   labs(fill = 'Planform', x = expression('T'[R])) +
   theme_bw() + 
   theme(legend.position = 'bottom')
@@ -86,7 +87,7 @@ ggplot(dfj_planform, aes(x = TR, fill = nchan)) +
 
 OHDB_ID, original ID, source, lon, lat, start year, end year, length, URL
 
-```{r flowdata_table, eval = T}
+```{r flowdata_table, eval = F}
 
 outtab <- read.csv(paste0(general_dir, '/ds01_flow_gauge_metadata.csv'))
 
@@ -111,24 +112,22 @@ source_table <- source_table %>%
 
 # T_R vs Q 
 
-Subset data:
+Subset data by planform:
 
 ```{r subs}
-# subdivide by n channelthreads
-div_var <- 'Channel.Count.Index....'
-div_thresh <- 1
-group_labels <- c('All', 'Single-thread', 'Multi-thread')
 
-# subset data
-sub1 <- df_joined %>% filter(!!as.symbol(div_var) <= !!div_thresh)
-sub2 <- df_joined %>% filter(!!as.symbol(div_var) > !!div_thresh) 
+# subdivide by planform
+group_labels <- c('All', 'Single-thread', 'Multi-thread')
+sub1 <- df_joined %>% filter(Type == 'Me')
+sub2 <- df_joined %>% filter(Type != 'Me')
 subs <- list(sub1, sub2)
+
 ```
 
 Mean monthly or mean annual discharge vs $T_R$:
 
 
-```{r Qmon_an_v_TR, fig.height=3, fig.width=6, dpi=300, eval = T}
+```{r Qmon_an_v_TR, fig.height=3, fig.width=6, dpi=300, eval = F}
 # plotting params
 lposy <- c(165, 151, 137)
 xadj <- -0.2
@@ -165,7 +164,7 @@ for(i in 1:length(bulkvars)){
   mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
   polygon(c(newx, rev(newx)), # add conflims to plot
           c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
-          col = 'gray85',
+          col = 'gray80',
           border = NA)
   lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
   
@@ -220,7 +219,7 @@ for(i in 1:length(bulkvars)){
 
 Width against Q and $T_R$:
 
-```{r width_plots, fig.height=3, fig.width=6, dpi=300, eval = T}
+```{r width_plots, fig.height=3, fig.width=6, dpi=300, eval = F}
 # plotting params
 yadj <- c(1.44, 1.32, 1.2)
 xadj <- 12
@@ -259,7 +258,7 @@ for(i in 1:length(yvars)){
   mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
   polygon(c(newx, rev(newx)), # add conflims to plot
           c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
-          col = 'gray85',
+          col = 'gray80',
           border = NA)
   lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
   
@@ -313,7 +312,7 @@ for(i in 1:length(yvars)){
 # Alternatives to power law for Fig 3:
 
 
-```{r exp_alt, fig.height=6, fig.width=6, dpi=300, eval = T}
+```{r exp_alt, fig.height=6, fig.width=6, dpi=300, eval = F}
 # plotting params
 lposy <- c(165, 151, 137)
 xadj <- -0.2
@@ -323,7 +322,7 @@ par(mfrow = c(2,3), oma = c(0, 0, 0, 0.7), mai = c(0.4, 0.4, 1, 0.07), mgp=c(1.8
 # variables to include
 Qvars <- c('RBI', 'DVIa', 'DVIc')
 xlabs <- c(bquote('Richards-Baker Index,' ~ italic(RBI) ~ '(-)'),
-           bquote('Annual discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
+           bquote('Average discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
            bquote('Cumulative discharge var.,' ~ italic(DVI[c]) ~ '(-)'))
 
 # type of curve
@@ -467,7 +466,7 @@ rf_dat <- df_joined %>%
          Channel.Count.Index....) %>% 
   filter(complete.cases(.)) # remove rows w/ NA
 
-cor(rf_dat %>% select(-TR, -Channel.Count.Index....))
+cor(rf_dat %>% select(-TR, -Channel.Count.Index....)) # test correlation between predictors
 
 ```
 
@@ -632,7 +631,7 @@ imp_data_kfold <- abind::abind(imp_data_kfold, along=3)
 # export to latex
 outtab <- imp_data_kfold2
 rownames(outtab) <- c('Richards-Baker Index, $RBI$ (-)', # rename model variables *BEFORE SORTING*
-                      'Annual Discharge Variability Index, $DVI_a$ (-)', 
+                      'Average Discharge Variability Index, $DVI_a$ (-)', 
                       'Cumulative Discharge Variability Index, $DVI_c$ (-)', 
                       'Channel slope, $S$ (-)', 
                       'Mean daily discharge, $\\bar{Q}$ (m\\textsuperscript{3}s\\textsuperscript{-1})',
@@ -649,7 +648,8 @@ outtab <- outtab[order(-outtab$`%IncMSE`),] %>%
 ```
 
 SHAP values
-```{r SHAP, eval = T}
+
+```{r SHAP, eval = F}
 rf_shap = rf_dat %>% select(-Channel.Count.Index....) %>% 
   rename('Slope' = slope..m.m,
          Q_mean = mean_Qd,
@@ -711,20 +711,26 @@ ggplot(data = shap_vals_long) +
 ```
 
 RF model for just single- or multi-thread rivers
-```{r RF_split, eval = T}
+```{r RF_split, eval = F}
 
 best.sampsize_p = 10 # note sampsize smaller than for whole dataset; 
 
+# subdivide by planform
+rf_dat_planform <- df_joined %>% 
+  select(TR, 
+         RBI,
+         DVIa,
+         DVIc,
+         slope..m.m,
+         mean_Qd,
+         Bed_Qs_norm,
+         Type) %>% 
+  filter(complete.cases(.)) # remove rows w/ NA
 
-# divide data by channel count
-div_var <- 'Channel.Count.Index....'
-div_thresh <- 1
-
-# subset data
-sub1 <- rf_dat %>% filter(!!as.symbol(div_var) <= !!div_thresh) %>% 
-  select(-'Channel.Count.Index....')
-sub2 <- rf_dat %>% filter(!!as.symbol(div_var) > !!div_thresh) %>% 
-  select(-'Channel.Count.Index....')
+sub1 <- rf_dat_planform %>% filter(Type == 'Me') %>% 
+  select(-Type)
+sub2 <- rf_dat_planform %>% filter(Type != 'Me')%>% 
+  select(-Type)
 subs <- list(sub1, sub2)
 
 # random forest w/ subsets
@@ -744,7 +750,7 @@ for(i in 1:length(subs)){
   # export to latex - # importance of predictors
   outtab <- as.data.frame(importance(rf.fit))
   rownames(outtab) <- c('Richards-Baker Index, $RBI$ (-)', # rename model variables *BEFORE SORTING*
-                        'Annual Discharge Variability Index, $DVI_a$ (-)', 
+                        'Average Discharge Variability Index, $DVI_a$ (-)', 
                         'Cumulative Discharge Variability Index, $DVI_c$ (-)', 
                         'Channel slope, $S$ (-)', 
                         'Mean daily discharge, $\\bar{Q}$ (m\\textsuperscript{3}s\\textsuperscript{-1})',
@@ -765,7 +771,7 @@ for(i in 1:length(subs)){
 
 To what extent does RF importance ranking vary with the choice of predictor variables? A form of 'leave-one-out cross-validation' where 'one' is 'one predictor' rather than 'one observation':
 
-```{r Var_om, eval = T}
+```{r Var_om, eval = F}
 rf_omit <- rf_dat %>% 
   select(-Channel.Count.Index....) %>%  # always omit - only needed for planform subdivision steps
   select(-slope..m.m) # omit one predictor each time - manually
@@ -790,7 +796,7 @@ outtab <- ImpData
 # comment out each in turn depending on what is ommited above
 rownames(outtab) <- c(
   'Richards-Baker Index, $RBI$ (-)', # rename model variables *BEFORE SORTING*
-  'Annual Discharge Variability Index, $DVI_a$ (-)',
+  'Average Discharge Variability Index, $DVI_a$ (-)',
   'Cumulative Discharge Variability Index, $DVI_c$ (-)',
   # 'Channel slope, $S$ (-)',
   'Mean daily discharge, $\\bar{Q}$ (m\\textsuperscript{3}s\\textsuperscript{-1})',
@@ -811,7 +817,7 @@ outtab <- outtab[order(-outtab$`%IncMSE`),] %>%
 
 Conceptual plot comparing raw flow data, flow duration curve + channel masks for a pair of rivers with similar mean discharge but different variability.
 
-```{r concept_fig_data, eval = T}
+```{r concept_fig_data, eval = F}
 
 # data prep ---- import data needed ------
 
@@ -868,8 +874,10 @@ flowdat_long <- lapply(1:nrow(df_joined), FUN = function(i){
 ```
 
 Data for sites of interest:
-```{r soi_imports, eval = T}
+```{r soi_imports, eval = F}
 # ---sites of interest----
+
+# Comment out as needed to make a comparison pair for each planform type.
 
 # B comparison
 # soi <- c('Tanana_NearHardingLake', # lower rbi,  meanQ = 582.8498
@@ -964,7 +972,7 @@ kgcols <- c('#33a02c', # tropical
 
 ```
 
-```{r conceptual_fig_base_meandering, fig.width = 7, fig.height = 8, dpi=300, eval = T}
+```{r conceptual_fig_base_meandering, fig.width = 7, fig.height = 8, dpi=300, eval = F}
 par(oma = c(0, 0, 0 , 0),
     mai = c(0.5, 0.5, 0, 0),
     mgp = c(1.5, 0.5, 0))
@@ -1141,7 +1149,7 @@ for(i in 1:length(soi)){
   sbar(2000, xy="top", divs=2, cex=1, ticks=TRUE, label = ('2 km')) # add scalebar
   
   
-  for(j in 2:length(yrs)){ # superimpose next layers - cleaner way?
+  for(j in 2:length(yrs)){ # superimpose next layers 
     plot(masks[[i]][[time(masks[[i]]) == yrs [j]]], 
          col = c(NA, colvec[si-1 + j]),
          axes = F,
@@ -1177,14 +1185,6 @@ kgcols <- c(
   '#ffff99', # continental 
   '#33a02c', # equatorial
   '#b2df8a') # temperate
-
-# darker option
-# kgcols <- c( 
-#   '#fb7b04', # arid
-#   '#ffff1a', # continental 
-#   '#1a5016', # equatorial
-#   '#88ce4b') # temperate
-
 
 # work out koppen_geiger climate zones at each site
 kg_zones <- df_joined %>%
@@ -1229,9 +1229,9 @@ ggplot(kg_zones, aes(x = DVIa, y = DVIc, colour = Climate_Zone, size = RBI)) +
 
 ```
 
-Histogram of GRWL river widths + channel threadcounts
+# Histogram of GRWL river widths + channel threadcounts
 
-```{r GRWL threadcounts}
+```{r GRWL threadcounts, eval = F}
 
 GRWL <- read.csv(paste0(general_dir, '/ds03_channel_threads_GRWL.csv')) %>% 
   select(nchannels, Count) %>% 
@@ -1247,3 +1247,640 @@ ggplot(GRWL, aes(x = nchannels, y = perc)) +
 
 ```
 
+# Table of water mask history for each site. Classify each site by 'mobility type':
+
+```{r water_mask_history, eval = T, fig.width=7, fig.height=8, dpi=300}
+require(terra)
+
+# Classification of each site by "mobility type":
+mob_class <- read.csv('./data/SM_data/mobility_class_final.csv')
+
+#----- figures------
+  
+par(mfrow = c(3, 2),
+    mai = rep(0, 4),
+    oma = rep(0.1, 4))
+
+# Just for lols:
+colvec <- rev(colvec)
+
+for(i in 1:nrow(df_joined)){ # comment if debugging
+# for(i in 43:48){ # uncomment if debugging
+  
+  # name site of interest
+  soi = df_joined$River[i]
+  
+  mob_class_i = mob_class$mobil_type_final[mob_class$River == soi]
+  
+  #------ import water masks ------
+  
+  rastdir <- paste0(water_mask_directory, '/SingleRivers/RiverData/', 
+                    df_joined$Type[df_joined$River == soi], '/', soi)
+  tifs <- list.files(rastdir, recursive = T, full.names = T, pattern = '.tif')
+  tifs_aux <- list.files(rastdir, pattern = '.tif.aux', full.names = T, recursive = T)
+  tifs <- base::setdiff(tifs, tifs_aux) # get rid of aux files from list of files to import
+  st <- rast(tifs)
+  
+  # get timestamp from filename; assign to raster stack time()
+  tvec_yr <- as.numeric(stringr::str_sub(tifs, -25, -22) )
+  
+  # error trap for date-stamp naming inconsistency in channel masks
+  if(soi == 'Tanana_NearHardingLake' | soi == 'Tista_AndersonBr'){ 
+    tvec_yr <- as.numeric(stringr::str_sub(tifs, -24, -21) )
+  }
+  
+  # assign timestamps to raster stack
+  time(st) <- tvec_yr 
+  
+  
+  # ---plot mobility masks----
+  
+  # vector of years to plot
+  
+  # special cases - when one of standard years is missing
+  if(soi == 'Tanana_NearHardingLake'){ 
+    yrs <- c(1991, 2001, 2011, 2021)
+  } else if(soi == 'Amur_Khabarovsk') {
+    yrs <- c(1990, 2000, 2011, 2020)
+  } else if(soi == 'Katun_Srostki') {
+    yrs <- c(1994, 2001, 2011, 2021)
+  } else if(soi == 'Kokcha_Khojaghar') {
+    yrs <- c(1990, 2000, 2010, 2019)
+  } else if(soi == 'Lena_Tabaga') {
+    yrs <- c(2000, 2010, 2020)
+  } else if(soi == 'Ob_Prokhorkino') {
+    yrs <- c(1986, 2000, 2010, 2020)
+  } else if(soi == 'Parana_Corrientes') {
+    yrs <- c(1990, 2000, 2009, 2020)
+  } else if(soi == 'Solimoes_Tabatinga') {
+    yrs <- c(1991, 2000, 2010, 2020)
+  } else if(soi == 'Taku_NearTulsequa') {
+    yrs <- c(1991, 2000, 2010, 2020)
+  } else if(soi == 'Tista_AndersonBr') {
+    yrs <- c(1993, 2000, 2009, 2019)
+  } else if(soi == 'Tista_Kaunia') {
+    yrs <- c(1990, 2000, 2009, 2020)
+  } else if(soi == 'Yukon_NearStevensVillage') {
+    yrs <- c(1986, 2000, 2009, 2020)
+  } else { 
+    
+    # general case
+    yrs <- c(1990, 2000, 2010, 2020)
+  }
+  
+  # start index - correction to make sure end of colour scale used in plot
+  si <- length(colvec) + 1 - length(yrs)
+  
+  # plot 1 + add next decades
+  plot(st[[time(st) == yrs[1]]],
+       col = c(NA, colvec[si]),
+       legend = F,
+       axes = F,
+       mar = c(1, 0, 2, 0),
+       buffer = F,
+       clip = T,
+       main = paste0(soi, ': ', mob_class_i)) # first raster
+  pu <- par('usr') # save axis lims to object
+  
+  # scale bar
+  # sites requiring shifts to avoid covering data
+  if(soi == 'Brahmaputra_Bahadurabad' | soi == 'Irrawaddy_Sagaing' | soi == 'SaoFrancisco_BomJesusDaLapa' | soi == 'Tisza_Vylok'){ 
+      sbar(5000, xy="bottomleft", divs=2, cex=1, ticks=TRUE, label = ('5 km')) 
+  } else if(soi == 'Brahmaputra_Yangcun' ){
+    sbar(5000, xy="topright", divs=2, cex=1, ticks=TRUE, label = ('5 km')) 
+  } else if(soi == 'Lena_Tabaga' | soi == 'Mamore_PuertoSiles' | soi == 'Parana_Corrientes'){
+    sbar(5000, xy="bottomright", divs=2, cex=1, ticks=TRUE, label = ('5 km')) 
+  } else { 
+    
+    # general condition
+      sbar(5000, xy="bottom", divs=2, cex=1, ticks=TRUE, label = ('5 km'))
+  }
+  
+  
+  for(j in 2:length(yrs)){ # superimpose next layers 
+    plot(st[[time(st) == yrs[j]]], 
+         col = c(NA, colvec[si-1 + j]),
+         axes = F,
+         legend = F,
+         mar = c(1, 0, 2, 0),
+         buffer = F,
+         clip = T,
+         add = T) # additional raster
+  }
+  
+  # legend
+  par(xpd = NA)
+  xadj <- 0.05
+  yadj <- 0.05 # tweak as necessary
+  terra::add_legend(
+    x = pu[1] + xadj * (pu[2] - pu[1]), 
+    y = pu[3] + yadj * (pu[4] - pu[3]),
+    legend = yrs,
+    fill = colvec[si:length(colvec)],
+    border = NA,
+    horiz = T, 
+    bty = 'n',
+    cex = 1.2)
+  par(xpd = F)
+  box()
+}
+```
+
+# Table of mobility types
+
+## Option 1: group by mobility class
+
+```{r mob_class_tab1}
+
+# join data for each site
+mob_class <- read.csv('./data/SM_data/mobility_class_final.csv') %>% 
+  select(River, mobil_type_final) %>% 
+  full_join(., df_joined) %>% 
+  mutate(plan_simple = ifelse(Type == 'LSW' | Type == 'HSW', 'W', Type)) %>% 
+  group_by(mobil_type_final)
+  
+mob_sum <- mob_class %>% 
+  summarise(n = n(),
+            Br = sum(plan_simple == 'B'),
+            Me = sum(plan_simple == 'Me'),
+            Wa = sum(plan_simple == 'W'),
+            TR_med = round(median(TR), 0),
+            RBI_med = signif(median(RBI), 2))
+
+# rename cols:
+colnames(mob_sum) <- c('Style', 'N.', 'Br', 'Me', 'Wa', 
+                       '$T_{R50}$',
+                       '$RBI_{50}$')
+
+mob_sum <- mob_sum %>% 
+  knitr::kable('latex', booktabs = T, escape = F) %>%
+  kable_styling(latex_options = 'striped')                 
+```
+
+## Option 2: group by planform and TR
+
+```{r mob_class_tab2}
+
+# join data for each site
+mob_class <- read.csv('./data/SM_data/mobility_class_final.csv') %>% 
+  select(River, mobil_type_final) %>% 
+  full_join(., df_joined) %>% 
+  mutate(plan_simple = ifelse(Type == 'LSW' | Type == 'HSW', 'W', Type)) %>% 
+  mutate(thread = ifelse(Type == 'Me', 'Single', 'Multi')) %>% 
+  group_by(thread) %>% 
+  mutate(subclass = cut_number(TR, 2)) %>% 
+  group_by(subclass)
+
+# divide into two equal bins in each group.
+mob_sum <- mob_class %>% 
+  summarise(thread = unique(thread),
+            TR = round(median(TR), 0), 
+            RBI = signif(median(RBI), 2),
+            DVIa = signif(median(DVIa), 2),
+            DVIc = signif(median(DVIc), 2),
+            BM = sum(mobil_type_final == 'BM'),
+            BMC = sum(mobil_type_final == 'BMC'),
+            BMA = sum(mobil_type_final == 'BMA'),
+            ABM = sum(mobil_type_final == 'ABM'),
+            Me = sum(plan_simple == 'Me'),
+            Wa = sum(plan_simple == 'W'),
+            Br = sum(plan_simple == 'B')) %>% 
+  mutate(subclass = c('low', 'high', 'low', 'high')) %>% 
+  relocate(thread, .before = subclass)
+
+
+# rename cols:
+colnames(mob_sum) <- c('Threads', '$T_R$', '$T_{R50}$', '$RBI_{50}$',
+                       '$DVI_{a50}$', '$DVI_{c50}$',
+                       'BM', 'BMC', 'BMA', 'ABM', 'Me', 'Wa', 'Br')
+
+mob_sum <- mob_sum %>%
+  knitr::kable('latex', booktabs = T, escape = F) %>%
+  kable_styling(latex_options = 'striped')                 
+```
+
+
+# Effect of dams:
+
+```{r dams, eval = F}
+
+# data prep - manually measured dist to nearest dam upstream at each site...
+dams <- st_read('./data/mobility/area_based/polygons/areal_all_w_dams.shp') %>% 
+  rename(River = site) %>% 
+  st_drop_geometry() %>% 
+  select(-Field) %>% 
+  mutate(dam_dist = as.numeric(dam_dist))
+
+df_joined <- df_joined %>% 
+  left_join(dams)
+
+# omit dams < 10 km upstream
+dams_gte_10_km <- df_joined %>% 
+  filter(dam_dist >= 10 | is.na(dam_dist))
+
+# omit dams < 50 km upstream
+dams_gte_50_km <- df_joined %>% 
+  filter(dam_dist >= 50 | is.na(dam_dist))
+
+# omit dams < 100 km upstream
+dams_gte_100_km <- df_joined %>% 
+  filter(dam_dist >= 100 | is.na(dam_dist))
+
+# omit dams at any dist. on mainstem
+dams_trib_only <- df_joined %>% 
+  filter(Dam_notes != 'on mainstem' | is.na(Dam_notes))
+
+```
+
+## Figure 3, omitting sites with a dam less than _n_ km upstream
+
+Re-write as func or loop if time.
+
+Prep cols:
+
+```{r f2cols_10km}
+require(scales)
+pcols <- RColorBrewer::brewer.pal(3, 'Set1')[2:3]
+
+```
+
+```{r Qvar_v_TR_10km, fig.height=2.5, fig.width=6, dpi=300, eval = F}
+# subset data
+sub1 <- dams_gte_10_km %>% filter(Type == 'Me')
+sub2 <- dams_gte_10_km %>% filter(Type != 'Me')
+subs <- list(sub1, sub2)
+
+# plotting params
+lposy <- c(161, 148, 135)
+xadj <- -0.2
+
+par(mfrow = c(1,3), oma = c(0, 0, 0, 0.7), mai = c(0.4, 0.4, 0.6, 0.07), mgp=c(1.8,0.5,0))
+
+# variables to include
+Qvars <- c('RBI', 'DVIa', 'DVIc')
+xlabs <- c(bquote('Richards-Baker Index,' ~ italic(RBI) ~ '(-)'),
+           bquote('Average discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
+           bquote('Cumulative discharge var.,' ~ italic(DVI[c]) ~ '(-)'))
+
+# plot
+for(i in 1:length(Qvars)){
+  bvar <- colnames(subset(dams_gte_10_km, select = Qvars))[i]
+  
+  # set plot axes
+  par(xpd = NA)
+  plot(range(dams_gte_10_km[bvar], na.rm = T), range(dams_gte_10_km$TR),
+       xlab = xlabs[i], 
+       ylab = bquote('Reworking timescale,' ~ italic('T'[R]) ~ ' (yr)'), 
+       type = 'n', 
+       log = '')  # if log-transform needed
+  par(xpd = F)
+  pu <- par('usr') # save axis lims to object
+  
+  # fit exponential model to full dataset:
+  x = dams_gte_10_km[bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+  y = dams_gte_10_km$TR
+  
+  mod.exp <- lm(log10(y) ~ log10(x))
+  r2a <- summary(mod.exp)$adj.r.squared
+  pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+  
+  # plot model + conflims
+  newx <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+  mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
+  polygon(c(newx, rev(newx)), # add conflims to plot
+          c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
+          col = 'gray85',
+          border = NA)
+  lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
+  
+  # annotations
+  par(xpd = NA)
+  legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+         y = lposy[1],
+         legend = bquote(.(group_labels[1]) ~
+                           italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                           italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),      
+         bg = NA,
+         bty = 'n')
+  legend('topright', legend = paste0('(', letters[i], ')'), text.font = 2, bty = 'n')
+  par(xpd = F)
+  
+  for(j in 1:length(subs)){
+    
+    x <- subs[[j]][bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+    y <- subs[[j]]$TR
+    
+    # fit exponential model:
+    mod.exp <- lm(log10(y) ~ log10(x))
+    r2a <- summary(mod.exp)$adj.r.squared
+    pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+    
+    # plot points
+    points(x, y, col = alpha(pcols[j], 0.7), pch = 16)
+    
+    # plot model - subsets
+    newx = seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+    mod.exp.preds <- 10^(predict(mod.exp,list(x = newx)))
+    lines(newx, mod.exp.preds, col = pcols[j])
+    
+    # annotations
+    par(xpd = NA)
+    
+    legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+           y = lposy[j+1],
+           col = pcols[j],
+           legend = bquote(.(group_labels[j+1]) ~
+                             italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                             italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),
+           bg = NA,
+           text.col = pcols[j],
+           bty = 'n')
+    par(xpd = F)
+  }
+}
+```
+
+```{r Qvar_v_TR_50km, fig.height=2.5, fig.width=6, dpi=300, eval = F}
+# subset data
+sub1 <- dams_gte_50_km %>% filter(Type == 'Me')
+sub2 <- dams_gte_50_km %>% filter(Type != 'Me')
+subs <- list(sub1, sub2)
+
+
+# plotting params
+par(mfrow = c(1,3), oma = c(0, 0, 0, 0.7), mai = c(0.4, 0.4, 0.6, 0.07), mgp=c(1.8,0.5,0))
+
+# variables to include
+Qvars <- c('RBI', 'DVIa', 'DVIc')
+xlabs <- c(bquote('Richards-Baker Index,' ~ italic(RBI) ~ '(-)'),
+           bquote('Average discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
+           bquote('Cumulative discharge var.,' ~ italic(DVI[c]) ~ '(-)'))
+
+# plot
+for(i in 1:length(Qvars)){
+  bvar <- colnames(subset(dams_gte_50_km, select = Qvars))[i]
+  
+  # set plot axes
+  par(xpd = NA)
+  plot(range(dams_gte_50_km[bvar], na.rm = T), range(dams_gte_50_km$TR),
+       xlab = xlabs[i], 
+       ylab = bquote('Reworking timescale,' ~ italic('T'[R]) ~ ' (yr)'), 
+       type = 'n', 
+       log = '')  # if log-transform needed
+  par(xpd = F)
+  pu <- par('usr') # save axis lims to object
+  
+  # fit exponential model to full dataset:
+  x = dams_gte_50_km[bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+  y = dams_gte_50_km$TR
+  
+  mod.exp <- lm(log10(y) ~ log10(x))
+  r2a <- summary(mod.exp)$adj.r.squared
+  pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+  
+  # plot model + conflims
+  newx <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+  mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
+  polygon(c(newx, rev(newx)), # add conflims to plot
+          c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
+          col = 'gray85',
+          border = NA)
+  lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
+  
+  # annotations
+  par(xpd = NA)
+  legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+         y = lposy[1],
+         legend = bquote(.(group_labels[1]) ~
+                           italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                           italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),      
+         bg = NA,
+         bty = 'n')
+  legend('topright', legend = paste0('(', letters[i], ')'), text.font = 2, bty = 'n')
+  par(xpd = F)
+  
+  for(j in 1:length(subs)){
+    
+    x <- subs[[j]][bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+    y <- subs[[j]]$TR
+    
+    # fit exponential model:
+    mod.exp <- lm(log10(y) ~ log10(x))
+    r2a <- summary(mod.exp)$adj.r.squared
+    pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+    
+    # plot points
+    points(x, y, col = alpha(pcols[j], 0.7), pch = 16)
+    
+    # plot model - subsets
+    newx = seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+    mod.exp.preds <- 10^(predict(mod.exp,list(x = newx)))
+    lines(newx, mod.exp.preds, col = pcols[j])
+    
+    # annotations
+    par(xpd = NA)
+    
+    legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+           y = lposy[j+1],
+           col = pcols[j],
+           legend = bquote(.(group_labels[j+1]) ~
+                             italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                             italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),
+           bg = NA,
+           text.col = pcols[j],
+           bty = 'n')
+    par(xpd = F)
+  }
+}
+```
+
+```{r Qvar_v_TR_100km, fig.height=2.5, fig.width=6, dpi=300, eval = F}
+
+# subset data
+sub1 <- dams_gte_100_km %>% filter(Type == 'Me')
+sub2 <- dams_gte_100_km %>% filter(Type != 'Me')
+subs <- list(sub1, sub2)
+
+# plotting params
+par(mfrow = c(1,3), oma = c(0, 0, 0, 0.7), mai = c(0.4, 0.4, 0.6, 0.07), mgp=c(1.8,0.5,0))
+
+# variables to include
+Qvars <- c('RBI', 'DVIa', 'DVIc')
+xlabs <- c(bquote('Richards-Baker Index,' ~ italic(RBI) ~ '(-)'),
+           bquote('Average discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
+           bquote('Cumulative discharge var.,' ~ italic(DVI[c]) ~ '(-)'))
+
+# plot
+for(i in 1:length(Qvars)){
+  bvar <- colnames(subset(dams_gte_100_km, select = Qvars))[i]
+  
+  # set plot axes
+  par(xpd = NA)
+  plot(range(dams_gte_100_km[bvar], na.rm = T), range(dams_gte_100_km$TR),
+       xlab = xlabs[i], 
+       ylab = bquote('Reworking timescale,' ~ italic('T'[R]) ~ ' (yr)'), 
+       type = 'n', 
+       log = '')  # if log-transform needed
+  par(xpd = F)
+  pu <- par('usr') # save axis lims to object
+  
+  # fit exponential model to full dataset:
+  x = dams_gte_100_km[bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+  y = dams_gte_100_km$TR
+  
+  mod.exp <- lm(log10(y) ~ log10(x))
+  r2a <- summary(mod.exp)$adj.r.squared
+  pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+  
+  # plot model + conflims
+  newx <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+  mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
+  polygon(c(newx, rev(newx)), # add conflims to plot
+          c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
+          col = 'gray85',
+          border = NA)
+  lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
+  
+  # annotations
+  par(xpd = NA)
+  legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+         y = lposy[1],
+         legend = bquote(.(group_labels[1]) ~
+                           italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                           italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),      
+         bg = NA,
+         bty = 'n')
+  legend('topright', legend = paste0('(', letters[i], ')'), text.font = 2, bty = 'n')
+  par(xpd = F)
+  
+  for(j in 1:length(subs)){
+    
+    x <- subs[[j]][bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+    y <- subs[[j]]$TR
+    
+    # fit exponential model:
+    mod.exp <- lm(log10(y) ~ log10(x))
+    r2a <- summary(mod.exp)$adj.r.squared
+    pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+    
+    # plot points
+    points(x, y, col = alpha(pcols[j], 0.7), pch = 16)
+    
+    # plot model - subsets
+    newx = seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+    mod.exp.preds <- 10^(predict(mod.exp,list(x = newx)))
+    lines(newx, mod.exp.preds, col = pcols[j])
+    
+    # annotations
+    par(xpd = NA)
+    
+    legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+           y = lposy[j+1],
+           col = pcols[j],
+           legend = bquote(.(group_labels[j+1]) ~
+                             italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                             italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),
+           bg = NA,
+           text.col = pcols[j],
+           bty = 'n')
+    par(xpd = F)
+  }
+}
+```
+
+## Figure 3, omitting sites with a dam on the main stem
+
+
+```{r Qvar_v_TR_tribonly, fig.height=2.5, fig.width=6, dpi=300, eval = F}
+
+# subset data
+sub1 <- dams_trib_only %>% filter(Type == 'Me')
+sub2 <- dams_trib_only %>% filter(Type != 'Me')
+subs <- list(sub1, sub2)
+
+# plotting params
+par(mfrow = c(1,3), oma = c(0, 0, 0, 0.7), mai = c(0.4, 0.4, 0.6, 0.07), mgp=c(1.8,0.5,0))
+
+# variables to include
+Qvars <- c('RBI', 'DVIa', 'DVIc')
+xlabs <- c(bquote('Richards-Baker Index,' ~ italic(RBI) ~ '(-)'),
+           bquote('Average discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
+           bquote('Cumulative discharge var.,' ~ italic(DVI[c]) ~ '(-)'))
+
+# plot
+for(i in 1:length(Qvars)){
+  bvar <- colnames(subset(dams_trib_only, select = Qvars))[i]
+  
+  # set plot axes
+  par(xpd = NA)
+  plot(range(dams_trib_only[bvar], na.rm = T), range(dams_trib_only$TR),
+       xlab = xlabs[i], 
+       ylab = bquote('Reworking timescale,' ~ italic('T'[R]) ~ ' (yr)'), 
+       type = 'n', 
+       log = '')  # if log-transform needed
+  par(xpd = F)
+  pu <- par('usr') # save axis lims to object
+  
+  # fit exponential model to full dataset:
+  x = dams_trib_only[bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+  y = dams_trib_only$TR
+  
+  mod.exp <- lm(log10(y) ~ log10(x))
+  r2a <- summary(mod.exp)$adj.r.squared
+  pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+  
+  # plot model + conflims
+  newx <- seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+  mod.exp.preds <- 10^(predict(mod.exp, interval = 'confidence', new = list(x = newx), level = 0.95))
+  polygon(c(newx, rev(newx)), # add conflims to plot
+          c(mod.exp.preds[, 2], rev(mod.exp.preds[, 3])),
+          col = 'gray85',
+          border = NA)
+  lines(newx, mod.exp.preds[,1], col = 'black') # add model to plot
+  
+  # annotations
+  par(xpd = NA)
+  legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+         y = lposy[1],
+         legend = bquote(.(group_labels[1]) ~
+                           italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                           italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),      
+         bg = NA,
+         bty = 'n')
+  legend('topright', legend = paste0('(', letters[i], ')'), text.font = 2, bty = 'n')
+  par(xpd = F)
+  
+  for(j in 1:length(subs)){
+    
+    x <- subs[[j]][bvar] %>% pull() %>% replace(., .<=0.0, NA) # substitute zeros or negatives with NA
+    y <- subs[[j]]$TR
+    
+    # fit exponential model:
+    mod.exp <- lm(log10(y) ~ log10(x))
+    r2a <- summary(mod.exp)$adj.r.squared
+    pv <- signif(summary(mod.exp)$coefficients[2,4], 1)
+    
+    # plot points
+    points(x, y, col = alpha(pcols[j], 0.7), pch = 16)
+    
+    # plot model - subsets
+    newx = seq(min(x, na.rm = T), max(x, na.rm = T), length.out = 999)
+    mod.exp.preds <- 10^(predict(mod.exp,list(x = newx)))
+    lines(newx, mod.exp.preds, col = pcols[j])
+    
+    # annotations
+    par(xpd = NA)
+    
+    legend(x = pu[1] + xadj * (pu[2] - pu[1]),
+           y = lposy[j+1],
+           col = pcols[j],
+           legend = bquote(.(group_labels[j+1]) ~
+                             italic('r'^2) ~ '= ' ~ .(signif(r2a, 2)) ~
+                             italic('p ') ~ .(ifelse(pv >= 0.001, paste0('= ', pv), '< 0.001'))),
+           bg = NA,
+           text.col = pcols[j],
+           bty = 'n')
+    par(xpd = F)
+  }
+}
+```

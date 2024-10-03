@@ -12,7 +12,7 @@ output:
 Code to generate the plots in ... submitted to ...
 
 ```{r setup, include=T}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = F)
 
 library(raster)
 library(lubridate)
@@ -119,7 +119,7 @@ soi <- c(
   'Mortes_SantoAntonioDoLeverger', # low rbi, mean Q = 878.206986
   'Tisza_Vylok') # high rbi, mean Q = 189.744506
 soi_codes <- c('MS', 'TV')
-soi_names_pretty <- c('Mortes at Santo Antoniô do Leverger',   'Tisza at Vylok')
+soi_names_pretty <- c('Mortes at Santo Antônio do Leverger',   'Tisza at Vylok')
 
 #----- flow records ------
 soi_ohdb <- df_joined$ohdb_id[df_joined$River %in% soi] 
@@ -132,7 +132,7 @@ soi_flowdat <- lapply(1:length(soi), FUN = function(i){
 #------ water masks ------
 require(terra)
 masks <- lapply(1:length(soi), FUN = function(i){
-  rastdir <- paste0(water_mask_directory, '/SingleRivers/RiverData/', 
+  rastdir <- paste0(water_mask_directory, 'SingleRivers/RiverData/', 
                     df_joined$Type[df_joined$River == soi[i]], '/', soi[i])
   tifs <- list.files(rastdir, recursive = T, full.names = T, pattern = '.tif')
   tifs_aux <- list.files(rastdir, pattern = '.tif.aux', full.names = T, recursive = T)
@@ -352,7 +352,7 @@ for(i in 1:length(soi)){
   sbar(2000, xy="right", divs=2, cex=1, ticks=TRUE, label = ('2 km')) # add scalebar
   
   
-  for(j in 2:length(yrs)){ # superimpose next layers - cleaner way?
+  for(j in 2:length(yrs)){ # superimpose next layers 
     plot(masks[[i]][[time(masks[[i]]) == yrs [j]]], 
          col = c(NA, colvec[si-1 + j]),
          axes = F,
@@ -409,14 +409,10 @@ xlabs <- c(bquote(italic(bar(Q)) ~ '('~m^3 * s^-1~')'),
            bquote('Sediment concentration,' ~ italic(Q[s]^'*') ~ ' (-)')
            )
 
-# subdivide by n channelthreads
-div_var <- 'Channel.Count.Index....'
-div_thresh <- 1
+# subdivide by planform
 group_labels <- c('All', 'Single-thread', 'Multi-thread')
-
-# subset data
-sub1 <- df_joined %>% filter(!!as.symbol(div_var) <= !!div_thresh)
-sub2 <- df_joined %>% filter(!!as.symbol(div_var) > !!div_thresh) 
+sub1 <- df_joined %>% filter(Type == 'Me')
+sub2 <- df_joined %>% filter(Type != 'Me')
 subs <- list(sub1, sub2)
 
 # plot
@@ -506,7 +502,7 @@ par(mfrow = c(1,3), oma = c(0, 0, 0, 0.7), mai = c(0.4, 0.4, 0.6, 0.07), mgp=c(1
 # variables to include
 Qvars <- c('RBI', 'DVIa', 'DVIc')
 xlabs <- c(bquote('Richards-Baker Index,' ~ italic(RBI) ~ '(-)'),
-           bquote('Annual discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
+           bquote('Average discharge var.,' ~ italic(DVI[a]) ~ '(-)'),
            bquote('Cumulative discharge var.,' ~ italic(DVI[c]) ~ '(-)'))
 
 # plot
